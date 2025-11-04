@@ -7,14 +7,29 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { Camera, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 
 export default function CameraGalleryApp() {
   //Crear states para controlar la app
   const [permission, requestPermission] = useCameraPermissions();
   const [hasGalleryPermission, setHasGalleryPermission] = useState(null);
-  const [facing, setFacing] = useState("back");
+  // Use Camera.Constants.Type when available; fall back to plain strings to
+  // support different expo-camera versions that may export CameraType or not.
+  const BACK =
+    (Camera &&
+      Camera.Constants &&
+      Camera.Constants.Type &&
+      Camera.Constants.Type.back) ||
+    "back";
+  const FRONT =
+    (Camera &&
+      Camera.Constants &&
+      Camera.Constants.Type &&
+      Camera.Constants.Type.front) ||
+    "front";
+
+  const [facing, setFacing] = useState(BACK);
   const [capturedImage, setCapturedImage] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
   const cameraRef = useRef(null);
@@ -24,11 +39,12 @@ export default function CameraGalleryApp() {
   }, []);
 
   const requestGalleryPermission = async () => {
-    const galleryStatus =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    setHasGalleryPermission(galleryStatus === "granted");
+    // requestMediaLibraryPermissionsAsync returns an object with status/granted
+    const result = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const granted = result.granted ?? result.status === "granted";
+    setHasGalleryPermission(granted);
 
-    if (galleryStatus != "granted") {
+    if (!granted) {
       Alert.alert(
         "Permiso denegado",
         "Se necesita acceso a la galería del teléfono"
@@ -42,7 +58,8 @@ export default function CameraGalleryApp() {
         const photo = await cameraRef.current.takePictureAsync({
           quality: 0.8,
         });
-        setCapturedImage(photo.url);
+        // takePictureAsync returns { uri, width, height, exif, base64? }
+        setCapturedImage(photo.uri);
         setShowCamera(false);
       } catch (error) {
         Alert.alert("Error", "No se pudo tomar la foto");
@@ -54,14 +71,14 @@ export default function CameraGalleryApp() {
   const pickImageFromGallery = async () => {
     if (!hasGalleryPermission) {
       Alert.alert(
-        "Permission Denied",
-        "Permission to access gallery is required!"
+        "Permiso denegado",
+        "Se necesitan permisos para acceder a la galería"
       );
       return;
     }
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         quality: 0.8,
       });
@@ -75,7 +92,7 @@ export default function CameraGalleryApp() {
   };
 
   const toggleCameraFacing = () => {
-    setFacing((current) => (current === "back" ? "front" : "back"));
+    setFacing((current) => (current === BACK ? FRONT : BACK));
   };
 
   if (!permission) {
@@ -99,43 +116,59 @@ export default function CameraGalleryApp() {
 
   if (showCamera) {
     return (
-      <View style={styles.fullscreen}>
-        <CameraView style={styles.camera} facing={facing} ref={cameraRef}>
+      <View style={styles.fullScreen}>
+        <Camera style={styles.camera} type={facing} ref={cameraRef}>
           <View style={styles.cameraButtonContainer}>
             <TouchableOpacity
-              style={styles.camerButton}
+              style={styles.cameraButton}
               onPress={toggleCameraFacing}
             >
               <Text style={styles.cameraButtonText}>Voltear</Text>
             </TouchableOpacity>
-            //Falta tomar foto y cerrar
             <TouchableOpacity
-              styles={styles.captureButton}
+              style={styles.captureButton}
               onPress={takePicture}
             >
               <View style={styles.captureButtonInner}></View>
             </TouchableOpacity>
             <TouchableOpacity
-              styles={styles.closeButton}
+              style={styles.closeButton}
               onPress={() => setShowCamera(false)}
             >
               <Text style={styles.cameraButtonText}>Cerrar</Text>
             </TouchableOpacity>
           </View>
-        </CameraView>
+        </Camera>
       </View>
     );
   }
   return (
     <View style={styles.container}>
-      <Text style={styles.tittle}>Cámara y Galería</Text>
+      <Text style={styles.title}>Cámara y Gallery</Text>
+
       {capturedImage && (
         <Image source={{ uri: capturedImage }} style={styles.preview} />
       )}
+
       <TouchableOpacity
         style={styles.button}
         onPress={() => setShowCamera(true)}
-      ></TouchableOpacity>
+      >
+        <Text style={styles.buttonText}>Abrir cámara</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.button} onPress={pickImageFromGallery}>
+        <Text style={styles.buttonText}>Abrir galería</Text>
+      </TouchableOpacity>
+
+      {capturedImage && (
+        <TouchableOpacity
+          style={[styles.button, styles.clearButton]}
+          onPress={() => setCapturedImage(null)}
+        >
+          <Text style={styles.buttonText}>Limpiar imagen</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -143,5 +176,89 @@ export default function CameraGalleryApp() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "green",
+    padding: 20,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "bold",
+    marginBottom: 20,
+    color: "#222",
+  },
+  text: {
+    fontSize: 16,
+    color: "#555",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+
+  button: {
+    backgroundColor: "#007bff",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    marginVertical: 8,
+    width: "80%",
+    alignItems: "center",
+  },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  clearButton: {
+    backgroundColor: "#ff4d4d",
+  },
+
+  fullScreen: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  camera: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  cameraButtonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingVertical: 15,
+  },
+  cameraButton: {
+    padding: 10,
+  },
+  cameraButtonText: {
+    color: "#fff",
+    fontSize: 16,
+  },
+  captureButton: {
+    width: 70,
+    height: 70,
+    borderWidth: 4,
+    borderColor: "white",
+    borderRadius: 50,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  captureButtonInner: {
+    width: 50,
+    height: 50,
+    backgroundColor: "#fff",
+    borderRadius: 25,
+  },
+  closeButton: {
+    padding: 10,
+  },
+
+  preview: {
+    width: 250,
+    height: 250,
+    borderRadius: 10,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: "#ccc",
   },
 });
